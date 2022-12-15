@@ -1,31 +1,43 @@
 import axios from "axios";
-import { AbstractPaymentService } from "@medusajs/medusa";
+import { AbstractPaymentService, PaymentSessionStatus } from "@medusajs/medusa";
 
 class PaymeProviderService extends AbstractPaymentService {
     static identifier = "payme";
 
     constructor(
-        { customerService, totalsService, regionService, manager },
+        { customerService, totalsService, regionService, cartService, manager },
         options
     ) {
         super(
-            { customerService, totalsService, regionService, manager },
+            {
+                customerService,
+                totalsService,
+                regionService,
+                cartService,
+                manager,
+            },
             options
         );
 
         /**
          * Required Payme options:
          * url
-         * token
-         * charge_id
+         * merchantId
+         * key
          */
 
-        this.options_ = options;
+        this.options_ = {
+            url: options.url,
+            token: `${options.merchantId}:${options.key}`,
+            merchantId: options.merchantId,
+            paycomPassword: options.key,
+            paycomLogin: "Paycom",
+        };
 
         /** @private @const {Payme} */
         this.payme_ = axios.create({
             baseURL: `${options.url}/api`,
-            headers: { "X-Auth": options.token },
+            headers: { "X-Auth": this.options_.token },
         });
 
         this.paymeMethods_ = {
@@ -34,7 +46,11 @@ class PaymeProviderService extends AbstractPaymentService {
             send: "receipts.send",
             check: "receipts.check",
             cancel: "receipts.cancel",
+            pay: "receipts.pay",
         };
+
+        this.cartService_ = cartService;
+        this.manager_ = manager;
     }
 
     /**
@@ -43,72 +59,67 @@ class PaymeProviderService extends AbstractPaymentService {
      * @returns {string} the status of the Payme receipt
      */
     async getStatus(payment) {
-        return "pending";
-
-        const { order_id } = payment;
-        const { data: receipt } = await this.payme_.post("/", {
-            method: this.paymeMethods_.check,
-            params: {
-                id: order_id,
-            },
-        });
+        const receipt = await this.retrievePayment(payment);
 
         switch (receipt.state) {
             case 0:
-                return "pending";
+                return PaymentSessionStatus.PENDING;
             case 4:
-                return "authorized";
+            case 30:
+                return PaymentSessionStatus.AUTHORIZED;
             case 5:
             case 6:
             case 20:
-                return "requires_more";
+                return PaymentSessionStatus.REQUIRES_MORE;
             case 21:
-            case 30:
             case 50:
-                return "canceled";
+                return PaymentSessionStatus.CANCELED;
             default:
-                return "pending";
+                return PaymentSessionStatus.PENDING;
         }
     }
 
     /**
      * Creates Payme receipt.
      * @param {string} cart - the cart to create a payment for
-     * @returns {string} id of payment intent
+     * @returns {object} payment receipt
      */
     async createPayment(cart) {
-        return "payme-payment-intent";
-
         try {
-            // TODO: tax rate
-            // TODO: discounts
-
-            const { data: receipt } = await this.payme_.post("/", {
-                method: this.paymeMethods_.create,
-                params: {
-                    account: {
-                        charge_id: this.options_.charge_id,
-                    },
-                    amount: cart.total * 100,
-                    detail: {
-                        items: cart.items.map((item) => ({
-                            title: item.title, //нааименование товара или услуги
-                            price: item.total * 1000, //цена за единицу товара или услуги, сумма указана в тийинах
-                            count: item.quantity, //кол-во товаров или услуг
-                            code: "00702001001000001", // код *ИКПУ обязательное поле
-                            units: Math.round(
-                                item.original_total / item.quantity
-                            ), //значение изменится в зависимости от вида товара
-                            vat_percent: 15, //обязательное поле, процент уплачиваемого НДС для данного товара или услуги
-                            package_code: "123456", //Код упаковки для конкретного товара или услуги, содержится на сайте в деталях найденного ИКПУ
-                        })),
-                    },
-                    description: "",
-                },
-            });
-
-            return receipt;
+            return {
+                status: PaymentSessionStatus.PENDING,
+            };
         } catch (error) {
+            console.log("ERROR: [CREATE PAYMENT] ", error);
+            throw error;
+        }
+    }
+
+    async createReceipt(cart) {
+        try {
+            const {
+                data: { error, result },
+            } = await this.payme_.post(
+                "/",
+                {
+                    method: this.paymeMethods_.create,
+                    params: {
+                        amount: cart.total * 100,
+                        account: {
+                            cart_id: cart.id,
+                        },
+                    },
+                },
+                {
+                    headers: { "X-Auth": this.options_.merchantId },
+                }
+            );
+
+            if (error) throw error;
+
+            return result?.receipt;
+        } catch (error) {
+            console.log("ERROR: [CREATE RECEIPT] ", error);
             throw error;
         }
     }
@@ -119,18 +130,21 @@ class PaymeProviderService extends AbstractPaymentService {
      * @returns {Object} Payme receipt object
      */
     async retrievePayment(data) {
-        return "payme-payment-intent";
-
         try {
-            const receipt = await this.payme_.post("/", {
+            const {
+                data: { error, result },
+            } = await this.payme_.post("/", {
                 method: this.paymeMethods_.get,
                 params: {
-                    id: data.order_id,
+                    id: data._id,
                 },
             });
 
-            return receipt;
+            if (error) throw error;
+
+            return result?.receipt;
         } catch (error) {
+            console.log("ERROR: [RETRIEVE PAYMENT] ", error);
             throw error;
         }
     }
@@ -144,6 +158,7 @@ class PaymeProviderService extends AbstractPaymentService {
         try {
             return this.retrievePayment(session.data);
         } catch (error) {
+            console.log("ERROR: [GET PAYMENT DATA] ", error);
             throw error;
         }
     }
@@ -156,11 +171,15 @@ class PaymeProviderService extends AbstractPaymentService {
      * @returns {Promise<{ status: string, data: object }>} result with data and status
      */
     async authorizePayment(session, context = {}) {
-        const status = await this.getStatus(session.data);
-
         try {
-            return { data: session.data, status };
+            const status = await this.getStatus(session.data);
+
+            return {
+                data: session.data,
+                status,
+            };
         } catch (error) {
+            console.log("ERROR: [AUTHORIZE PAYMENT] ", error);
             throw error;
         }
     }
@@ -175,6 +194,7 @@ class PaymeProviderService extends AbstractPaymentService {
         try {
             return { ...sessionData, ...update };
         } catch (error) {
+            console.log("ERROR: [UPDATE PAYMENT DATA] ", error);
             throw error;
         }
     }
@@ -183,8 +203,6 @@ class PaymeProviderService extends AbstractPaymentService {
      * Not suported
      */
     async updatePayment(data) {
-        throw new Error("Method not implemented.");
-
         return data;
     }
 
@@ -192,10 +210,8 @@ class PaymeProviderService extends AbstractPaymentService {
      * Not suported
      */
     async capturePayment(payment) {
-        throw new Error("Method not implemented.");
-
         try {
-            return payment;
+            return this.retrievePayment(payment.data);
         } catch (error) {
             throw error;
         }
@@ -205,8 +221,6 @@ class PaymeProviderService extends AbstractPaymentService {
      * Not suported
      */
     async refundPayment(payment) {
-        throw new Error("Method not implemented.");
-
         try {
             return payment;
         } catch (error) {
@@ -220,20 +234,19 @@ class PaymeProviderService extends AbstractPaymentService {
      * @returns {string} id of cancelled order
      */
     async cancelPayment(payment) {
-        throw new Error("Method not implemented.");
-
-        const { order_id } = payment.data;
+        const { id } = payment.data;
 
         try {
             await this.payme_.post("/", {
                 method: this.paymeMethods_.cancel,
                 params: {
-                    id: order_id,
+                    id,
                 },
             });
 
             return this.getPaymentData(payment.data);
         } catch (error) {
+            console.log("ERROR: [CANCEL PAYMENT] ", error);
             throw error;
         }
     }
@@ -242,8 +255,38 @@ class PaymeProviderService extends AbstractPaymentService {
      * Not suported
      */
     async deletePayment(_) {
-        throw new Error("Method not implemented.");
         return;
+    }
+
+    authProtect(login, password) {
+        if (
+            login == this.options_.paycomLogin &&
+            password == this.options_.paycomPassword
+        )
+            return true;
+
+        return false;
+    }
+
+    async payReceipt(receipt, card) {
+        try {
+            const {
+                data: { error, result },
+            } = await this.payme_.post("/", {
+                method: this.paymeMethods_.pay,
+                params: {
+                    id: receipt?._id,
+                    token: card.token,
+                },
+            });
+
+            if (error) throw error;
+
+            return result.receipt;
+        } catch (error) {
+            console.log("ERROR: [PAY RECEIPT] ", error);
+            throw error;
+        }
     }
 }
 

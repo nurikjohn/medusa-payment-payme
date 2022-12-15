@@ -27,29 +27,37 @@ var PaymeProviderService = /*#__PURE__*/function (_AbstractPaymentServi) {
     var customerService = _ref.customerService,
       totalsService = _ref.totalsService,
       regionService = _ref.regionService,
+      cartService = _ref.cartService,
       manager = _ref.manager;
     (0, _classCallCheck2["default"])(this, PaymeProviderService);
     _this = _super.call(this, {
       customerService: customerService,
       totalsService: totalsService,
       regionService: regionService,
+      cartService: cartService,
       manager: manager
     }, options);
 
     /**
      * Required Payme options:
      * url
-     * token
-     * charge_id
+     * merchantId
+     * key
      */
 
-    _this.options_ = options;
+    _this.options_ = {
+      url: options.url,
+      token: "".concat(options.merchantId, ":").concat(options.key),
+      merchantId: options.merchantId,
+      paycomPassword: options.key,
+      paycomLogin: "Paycom"
+    };
 
     /** @private @const {Payme} */
     _this.payme_ = _axios["default"].create({
       baseURL: "".concat(options.url, "/api"),
       headers: {
-        "X-Auth": options.token
+        "X-Auth": _this.options_.token
       }
     });
     _this.paymeMethods_ = {
@@ -57,8 +65,11 @@ var PaymeProviderService = /*#__PURE__*/function (_AbstractPaymentServi) {
       create: "receipts.create",
       send: "receipts.send",
       check: "receipts.check",
-      cancel: "receipts.cancel"
+      cancel: "receipts.cancel",
+      pay: "receipts.pay"
     };
+    _this.cartService_ = cartService;
+    _this.manager_ = manager;
     return _this;
   }
 
@@ -71,29 +82,29 @@ var PaymeProviderService = /*#__PURE__*/function (_AbstractPaymentServi) {
     key: "getStatus",
     value: function () {
       var _getStatus = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee(payment) {
-        var order_id, _yield$this$payme_$po, receipt;
+        var receipt;
         return _regenerator["default"].wrap(function _callee$(_context) {
           while (1) {
             switch (_context.prev = _context.next) {
               case 0:
-                return _context.abrupt("return", "pending");
-              case 4:
-                _yield$this$payme_$po = _context.sent;
-                receipt = _yield$this$payme_$po.data;
+                _context.next = 2;
+                return this.retrievePayment(payment);
+              case 2:
+                receipt = _context.sent;
                 _context.t0 = receipt.state;
-                _context.next = _context.t0 === 0 ? 9 : _context.t0 === 4 ? 10 : _context.t0 === 5 ? 11 : _context.t0 === 6 ? 11 : _context.t0 === 20 ? 11 : _context.t0 === 21 ? 12 : _context.t0 === 30 ? 12 : _context.t0 === 50 ? 12 : 13;
+                _context.next = _context.t0 === 0 ? 6 : _context.t0 === 4 ? 7 : _context.t0 === 30 ? 7 : _context.t0 === 5 ? 8 : _context.t0 === 6 ? 8 : _context.t0 === 20 ? 8 : _context.t0 === 21 ? 9 : _context.t0 === 50 ? 9 : 10;
                 break;
+              case 6:
+                return _context.abrupt("return", _medusa.PaymentSessionStatus.PENDING);
+              case 7:
+                return _context.abrupt("return", _medusa.PaymentSessionStatus.AUTHORIZED);
+              case 8:
+                return _context.abrupt("return", _medusa.PaymentSessionStatus.REQUIRES_MORE);
               case 9:
-                return _context.abrupt("return", "pending");
+                return _context.abrupt("return", _medusa.PaymentSessionStatus.CANCELED);
               case 10:
-                return _context.abrupt("return", "authorized");
+                return _context.abrupt("return", _medusa.PaymentSessionStatus.PENDING);
               case 11:
-                return _context.abrupt("return", "requires_more");
-              case 12:
-                return _context.abrupt("return", "canceled");
-              case 13:
-                return _context.abrupt("return", "pending");
-              case 14:
               case "end":
                 return _context.stop();
             }
@@ -108,37 +119,89 @@ var PaymeProviderService = /*#__PURE__*/function (_AbstractPaymentServi) {
     /**
      * Creates Payme receipt.
      * @param {string} cart - the cart to create a payment for
-     * @returns {string} id of payment intent
+     * @returns {object} payment receipt
      */
   }, {
     key: "createPayment",
     value: function () {
       var _createPayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee2(cart) {
-        var _yield$this$payme_$po2, receipt;
         return _regenerator["default"].wrap(function _callee2$(_context2) {
           while (1) {
             switch (_context2.prev = _context2.next) {
               case 0:
-                return _context2.abrupt("return", "payme-payment-intent");
+                _context2.prev = 0;
+                return _context2.abrupt("return", {
+                  status: _medusa.PaymentSessionStatus.PENDING
+                });
               case 4:
-                _yield$this$payme_$po2 = _context2.sent;
-                receipt = _yield$this$payme_$po2.data;
-                return _context2.abrupt("return", receipt);
-              case 9:
-                _context2.prev = 9;
-                _context2.t0 = _context2["catch"](1);
+                _context2.prev = 4;
+                _context2.t0 = _context2["catch"](0);
+                console.log("ERROR: [CREATE PAYMENT] ", _context2.t0);
                 throw _context2.t0;
-              case 12:
+              case 8:
               case "end":
                 return _context2.stop();
             }
           }
-        }, _callee2, this, [[1, 9]]);
+        }, _callee2, null, [[0, 4]]);
       }));
       function createPayment(_x2) {
         return _createPayment.apply(this, arguments);
       }
       return createPayment;
+    }()
+  }, {
+    key: "createReceipt",
+    value: function () {
+      var _createReceipt = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee3(cart) {
+        var _yield$this$payme_$po, _yield$this$payme_$po2, error, result;
+        return _regenerator["default"].wrap(function _callee3$(_context3) {
+          while (1) {
+            switch (_context3.prev = _context3.next) {
+              case 0:
+                _context3.prev = 0;
+                _context3.next = 3;
+                return this.payme_.post("/", {
+                  method: this.paymeMethods_.create,
+                  params: {
+                    amount: cart.total * 100,
+                    account: {
+                      cart_id: cart.id
+                    }
+                  }
+                }, {
+                  headers: {
+                    "X-Auth": this.options_.merchantId
+                  }
+                });
+              case 3:
+                _yield$this$payme_$po = _context3.sent;
+                _yield$this$payme_$po2 = _yield$this$payme_$po.data;
+                error = _yield$this$payme_$po2.error;
+                result = _yield$this$payme_$po2.result;
+                if (!error) {
+                  _context3.next = 9;
+                  break;
+                }
+                throw error;
+              case 9:
+                return _context3.abrupt("return", result === null || result === void 0 ? void 0 : result.receipt);
+              case 12:
+                _context3.prev = 12;
+                _context3.t0 = _context3["catch"](0);
+                console.log("ERROR: [CREATE RECEIPT] ", _context3.t0);
+                throw _context3.t0;
+              case 16:
+              case "end":
+                return _context3.stop();
+            }
+          }
+        }, _callee3, this, [[0, 12]]);
+      }));
+      function createReceipt(_x3) {
+        return _createReceipt.apply(this, arguments);
+      }
+      return createReceipt;
     }()
     /**
      * Retrieves Payme receipt.
@@ -148,28 +211,45 @@ var PaymeProviderService = /*#__PURE__*/function (_AbstractPaymentServi) {
   }, {
     key: "retrievePayment",
     value: function () {
-      var _retrievePayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee3(data) {
-        var receipt;
-        return _regenerator["default"].wrap(function _callee3$(_context3) {
+      var _retrievePayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee4(data) {
+        var _yield$this$payme_$po3, _yield$this$payme_$po4, error, result;
+        return _regenerator["default"].wrap(function _callee4$(_context4) {
           while (1) {
-            switch (_context3.prev = _context3.next) {
+            switch (_context4.prev = _context4.next) {
               case 0:
-                return _context3.abrupt("return", "payme-payment-intent");
-              case 4:
-                receipt = _context3.sent;
-                return _context3.abrupt("return", receipt);
-              case 8:
-                _context3.prev = 8;
-                _context3.t0 = _context3["catch"](1);
-                throw _context3.t0;
-              case 11:
+                _context4.prev = 0;
+                _context4.next = 3;
+                return this.payme_.post("/", {
+                  method: this.paymeMethods_.get,
+                  params: {
+                    id: data._id
+                  }
+                });
+              case 3:
+                _yield$this$payme_$po3 = _context4.sent;
+                _yield$this$payme_$po4 = _yield$this$payme_$po3.data;
+                error = _yield$this$payme_$po4.error;
+                result = _yield$this$payme_$po4.result;
+                if (!error) {
+                  _context4.next = 9;
+                  break;
+                }
+                throw error;
+              case 9:
+                return _context4.abrupt("return", result === null || result === void 0 ? void 0 : result.receipt);
+              case 12:
+                _context4.prev = 12;
+                _context4.t0 = _context4["catch"](0);
+                console.log("ERROR: [RETRIEVE PAYMENT] ", _context4.t0);
+                throw _context4.t0;
+              case 16:
               case "end":
-                return _context3.stop();
+                return _context4.stop();
             }
           }
-        }, _callee3, this, [[1, 8]]);
+        }, _callee4, this, [[0, 12]]);
       }));
-      function retrievePayment(_x3) {
+      function retrievePayment(_x4) {
         return _retrievePayment.apply(this, arguments);
       }
       return retrievePayment;
@@ -182,25 +262,26 @@ var PaymeProviderService = /*#__PURE__*/function (_AbstractPaymentServi) {
   }, {
     key: "getPaymentData",
     value: function () {
-      var _getPaymentData = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee4(session) {
-        return _regenerator["default"].wrap(function _callee4$(_context4) {
+      var _getPaymentData = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee5(session) {
+        return _regenerator["default"].wrap(function _callee5$(_context5) {
           while (1) {
-            switch (_context4.prev = _context4.next) {
+            switch (_context5.prev = _context5.next) {
               case 0:
-                _context4.prev = 0;
-                return _context4.abrupt("return", this.retrievePayment(session.data));
+                _context5.prev = 0;
+                return _context5.abrupt("return", this.retrievePayment(session.data));
               case 4:
-                _context4.prev = 4;
-                _context4.t0 = _context4["catch"](0);
-                throw _context4.t0;
-              case 7:
+                _context5.prev = 4;
+                _context5.t0 = _context5["catch"](0);
+                console.log("ERROR: [GET PAYMENT DATA] ", _context5.t0);
+                throw _context5.t0;
+              case 8:
               case "end":
-                return _context4.stop();
+                return _context5.stop();
             }
           }
-        }, _callee4, this, [[0, 4]]);
+        }, _callee5, this, [[0, 4]]);
       }));
-      function getPaymentData(_x4) {
+      function getPaymentData(_x5) {
         return _getPaymentData.apply(this, arguments);
       }
       return getPaymentData;
@@ -215,36 +296,37 @@ var PaymeProviderService = /*#__PURE__*/function (_AbstractPaymentServi) {
   }, {
     key: "authorizePayment",
     value: function () {
-      var _authorizePayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee5(session) {
+      var _authorizePayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee6(session) {
         var context,
           status,
-          _args5 = arguments;
-        return _regenerator["default"].wrap(function _callee5$(_context5) {
+          _args6 = arguments;
+        return _regenerator["default"].wrap(function _callee6$(_context6) {
           while (1) {
-            switch (_context5.prev = _context5.next) {
+            switch (_context6.prev = _context6.next) {
               case 0:
-                context = _args5.length > 1 && _args5[1] !== undefined ? _args5[1] : {};
-                _context5.next = 3;
+                context = _args6.length > 1 && _args6[1] !== undefined ? _args6[1] : {};
+                _context6.prev = 1;
+                _context6.next = 4;
                 return this.getStatus(session.data);
-              case 3:
-                status = _context5.sent;
-                _context5.prev = 4;
-                return _context5.abrupt("return", {
+              case 4:
+                status = _context6.sent;
+                return _context6.abrupt("return", {
                   data: session.data,
                   status: status
                 });
               case 8:
-                _context5.prev = 8;
-                _context5.t0 = _context5["catch"](4);
-                throw _context5.t0;
-              case 11:
+                _context6.prev = 8;
+                _context6.t0 = _context6["catch"](1);
+                console.log("ERROR: [AUTHORIZE PAYMENT] ", _context6.t0);
+                throw _context6.t0;
+              case 12:
               case "end":
-                return _context5.stop();
+                return _context6.stop();
             }
           }
-        }, _callee5, this, [[4, 8]]);
+        }, _callee6, this, [[1, 8]]);
       }));
-      function authorizePayment(_x5) {
+      function authorizePayment(_x6) {
         return _authorizePayment.apply(this, arguments);
       }
       return authorizePayment;
@@ -258,25 +340,26 @@ var PaymeProviderService = /*#__PURE__*/function (_AbstractPaymentServi) {
   }, {
     key: "updatePaymentData",
     value: function () {
-      var _updatePaymentData = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee6(sessionData, update) {
-        return _regenerator["default"].wrap(function _callee6$(_context6) {
+      var _updatePaymentData = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee7(sessionData, update) {
+        return _regenerator["default"].wrap(function _callee7$(_context7) {
           while (1) {
-            switch (_context6.prev = _context6.next) {
+            switch (_context7.prev = _context7.next) {
               case 0:
-                _context6.prev = 0;
-                return _context6.abrupt("return", _objectSpread(_objectSpread({}, sessionData), update));
+                _context7.prev = 0;
+                return _context7.abrupt("return", _objectSpread(_objectSpread({}, sessionData), update));
               case 4:
-                _context6.prev = 4;
-                _context6.t0 = _context6["catch"](0);
-                throw _context6.t0;
-              case 7:
+                _context7.prev = 4;
+                _context7.t0 = _context7["catch"](0);
+                console.log("ERROR: [UPDATE PAYMENT DATA] ", _context7.t0);
+                throw _context7.t0;
+              case 8:
               case "end":
-                return _context6.stop();
+                return _context7.stop();
             }
           }
-        }, _callee6, null, [[0, 4]]);
+        }, _callee7, null, [[0, 4]]);
       }));
-      function updatePaymentData(_x6, _x7) {
+      function updatePaymentData(_x7, _x8) {
         return _updatePaymentData.apply(this, arguments);
       }
       return updatePaymentData;
@@ -287,20 +370,20 @@ var PaymeProviderService = /*#__PURE__*/function (_AbstractPaymentServi) {
   }, {
     key: "updatePayment",
     value: function () {
-      var _updatePayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee7(data) {
-        return _regenerator["default"].wrap(function _callee7$(_context7) {
+      var _updatePayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee8(data) {
+        return _regenerator["default"].wrap(function _callee8$(_context8) {
           while (1) {
-            switch (_context7.prev = _context7.next) {
+            switch (_context8.prev = _context8.next) {
               case 0:
-                throw new Error("Method not implemented.");
-              case 2:
+                return _context8.abrupt("return", data);
+              case 1:
               case "end":
-                return _context7.stop();
+                return _context8.stop();
             }
           }
-        }, _callee7);
+        }, _callee8);
       }));
-      function updatePayment(_x8) {
+      function updatePayment(_x9) {
         return _updatePayment.apply(this, arguments);
       }
       return updatePayment;
@@ -311,24 +394,25 @@ var PaymeProviderService = /*#__PURE__*/function (_AbstractPaymentServi) {
   }, {
     key: "capturePayment",
     value: function () {
-      var _capturePayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee8(payment) {
-        return _regenerator["default"].wrap(function _callee8$(_context8) {
+      var _capturePayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee9(payment) {
+        return _regenerator["default"].wrap(function _callee9$(_context9) {
           while (1) {
-            switch (_context8.prev = _context8.next) {
+            switch (_context9.prev = _context9.next) {
               case 0:
-                throw new Error("Method not implemented.");
-              case 5:
-                _context8.prev = 5;
-                _context8.t0 = _context8["catch"](1);
-                throw _context8.t0;
-              case 8:
+                _context9.prev = 0;
+                return _context9.abrupt("return", this.retrievePayment(payment.data));
+              case 4:
+                _context9.prev = 4;
+                _context9.t0 = _context9["catch"](0);
+                throw _context9.t0;
+              case 7:
               case "end":
-                return _context8.stop();
+                return _context9.stop();
             }
           }
-        }, _callee8, null, [[1, 5]]);
+        }, _callee9, this, [[0, 4]]);
       }));
-      function capturePayment(_x9) {
+      function capturePayment(_x10) {
         return _capturePayment.apply(this, arguments);
       }
       return capturePayment;
@@ -339,24 +423,25 @@ var PaymeProviderService = /*#__PURE__*/function (_AbstractPaymentServi) {
   }, {
     key: "refundPayment",
     value: function () {
-      var _refundPayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee9(payment) {
-        return _regenerator["default"].wrap(function _callee9$(_context9) {
+      var _refundPayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee10(payment) {
+        return _regenerator["default"].wrap(function _callee10$(_context10) {
           while (1) {
-            switch (_context9.prev = _context9.next) {
+            switch (_context10.prev = _context10.next) {
               case 0:
-                throw new Error("Method not implemented.");
-              case 5:
-                _context9.prev = 5;
-                _context9.t0 = _context9["catch"](1);
-                throw _context9.t0;
-              case 8:
+                _context10.prev = 0;
+                return _context10.abrupt("return", payment);
+              case 4:
+                _context10.prev = 4;
+                _context10.t0 = _context10["catch"](0);
+                throw _context10.t0;
+              case 7:
               case "end":
-                return _context9.stop();
+                return _context10.stop();
             }
           }
-        }, _callee9, null, [[1, 5]]);
+        }, _callee10, null, [[0, 4]]);
       }));
-      function refundPayment(_x10) {
+      function refundPayment(_x11) {
         return _refundPayment.apply(this, arguments);
       }
       return refundPayment;
@@ -369,27 +454,36 @@ var PaymeProviderService = /*#__PURE__*/function (_AbstractPaymentServi) {
   }, {
     key: "cancelPayment",
     value: function () {
-      var _cancelPayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee10(payment) {
-        var order_id;
-        return _regenerator["default"].wrap(function _callee10$(_context10) {
+      var _cancelPayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee11(payment) {
+        var id;
+        return _regenerator["default"].wrap(function _callee11$(_context11) {
           while (1) {
-            switch (_context10.prev = _context10.next) {
+            switch (_context11.prev = _context11.next) {
               case 0:
-                throw new Error("Method not implemented.");
-              case 5:
-                return _context10.abrupt("return", this.getPaymentData(payment.data));
-              case 8:
-                _context10.prev = 8;
-                _context10.t0 = _context10["catch"](2);
-                throw _context10.t0;
+                id = payment.data.id;
+                _context11.prev = 1;
+                _context11.next = 4;
+                return this.payme_.post("/", {
+                  method: this.paymeMethods_.cancel,
+                  params: {
+                    id: id
+                  }
+                });
+              case 4:
+                return _context11.abrupt("return", this.getPaymentData(payment.data));
+              case 7:
+                _context11.prev = 7;
+                _context11.t0 = _context11["catch"](1);
+                console.log("ERROR: [CANCEL PAYMENT] ", _context11.t0);
+                throw _context11.t0;
               case 11:
               case "end":
-                return _context10.stop();
+                return _context11.stop();
             }
           }
-        }, _callee10, this, [[2, 8]]);
+        }, _callee11, this, [[1, 7]]);
       }));
-      function cancelPayment(_x11) {
+      function cancelPayment(_x12) {
         return _cancelPayment.apply(this, arguments);
       }
       return cancelPayment;
@@ -400,23 +494,76 @@ var PaymeProviderService = /*#__PURE__*/function (_AbstractPaymentServi) {
   }, {
     key: "deletePayment",
     value: function () {
-      var _deletePayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee11(_) {
-        return _regenerator["default"].wrap(function _callee11$(_context11) {
+      var _deletePayment = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee12(_) {
+        return _regenerator["default"].wrap(function _callee12$(_context12) {
           while (1) {
-            switch (_context11.prev = _context11.next) {
+            switch (_context12.prev = _context12.next) {
               case 0:
-                throw new Error("Method not implemented.");
-              case 2:
+                return _context12.abrupt("return");
+              case 1:
               case "end":
-                return _context11.stop();
+                return _context12.stop();
             }
           }
-        }, _callee11);
+        }, _callee12);
       }));
-      function deletePayment(_x12) {
+      function deletePayment(_x13) {
         return _deletePayment.apply(this, arguments);
       }
       return deletePayment;
+    }()
+  }, {
+    key: "authProtect",
+    value: function authProtect(login, password) {
+      if (login == this.options_.paycomLogin && password == this.options_.paycomPassword) return true;
+      return false;
+    }
+  }, {
+    key: "payReceipt",
+    value: function () {
+      var _payReceipt = (0, _asyncToGenerator2["default"])( /*#__PURE__*/_regenerator["default"].mark(function _callee13(receipt, card) {
+        var _yield$this$payme_$po5, _yield$this$payme_$po6, error, result;
+        return _regenerator["default"].wrap(function _callee13$(_context13) {
+          while (1) {
+            switch (_context13.prev = _context13.next) {
+              case 0:
+                _context13.prev = 0;
+                _context13.next = 3;
+                return this.payme_.post("/", {
+                  method: this.paymeMethods_.pay,
+                  params: {
+                    id: receipt === null || receipt === void 0 ? void 0 : receipt._id,
+                    token: card.token
+                  }
+                });
+              case 3:
+                _yield$this$payme_$po5 = _context13.sent;
+                _yield$this$payme_$po6 = _yield$this$payme_$po5.data;
+                error = _yield$this$payme_$po6.error;
+                result = _yield$this$payme_$po6.result;
+                if (!error) {
+                  _context13.next = 9;
+                  break;
+                }
+                throw error;
+              case 9:
+                return _context13.abrupt("return", result.receipt);
+              case 12:
+                _context13.prev = 12;
+                _context13.t0 = _context13["catch"](0);
+                console.log("ERROR: [PAY RECEIPT] ", _context13.t0);
+                throw _context13.t0;
+              case 16:
+              case "end":
+                return _context13.stop();
+            }
+          }
+        }, _callee13, this, [[0, 12]]);
+      }));
+      function payReceipt(_x14, _x15) {
+        return _payReceipt.apply(this, arguments);
+      }
+      return payReceipt;
     }()
   }]);
   return PaymeProviderService;
